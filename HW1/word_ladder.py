@@ -5,6 +5,12 @@ Ivan Christian
 '''
 from search_py3.search import Problem
 
+
+WORDS = set(i.lower().strip() for i in open('words2.txt'))
+ALPHABET = 'abcdefghijklmnopqrstuvwxyz'
+
+
+
 def is_valid_word(word):
 	'''
 	Check 
@@ -36,18 +42,19 @@ class Word_Ladder(Problem):
 		oldWord = state
 
 		for idx in range(len(oldWord)):
-			oldLetter = oldWord[index].lower()
+			oldLetter = oldWord[idx].lower()
 			for newLetter in ALPHABET:
 				if (newLetter != oldLetter):
-					newWord = oldWord.replace(oldLetter, newLetter, index+1)
+					newWord = oldWord.replace(oldLetter, newLetter, idx+1)
 					if((newWord is not None) and (is_valid_word(newWord))):
 						newWords.append(newWord)
+
 		return newWords
-	def result(self, state, action):
+
+	def result(self, state, actions):
 		pass
 	def value(self, state):
 		pass
-
 
 
 def run():
@@ -58,9 +65,20 @@ def run():
 	"cold" to "warm"
 	"best" to "math"
 	'''
+	# start = input('Please input a valid word to start the word ladder : ')
+	# end = input('Please input a valid word to end the word ladder : ')
+	start = 'best'
+	end = 'math'
 
-	WORDS = set(i.lower().strip() for i in open('words2.txt'))
-	ALPHABET = 'abcdefghijklmnopqrstuvwxyz'
+	if is_valid_word(start) and is_valid_word(end):
+		wl = Word_Ladder(start, end)
+		newWords = wl.actions(start)
+		check = wl.goal_test(end)
+
+		print(newWords)
+		print(check)
+	else:
+		pritn('Not a valid word')
 
 
 
