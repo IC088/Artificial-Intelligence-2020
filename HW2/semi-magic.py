@@ -44,10 +44,22 @@ def solve_semi_magic(algorithm=backtracking_search, **args):
     
     print('number of assignments', csp.nassigns)
     assign = csp.infer_assignment()
-    if assign:
-        for x in sorted(assign.items()):
-            print(x)
+    # if assign:
+    #     for x in sorted(assign.items()):
+    #         print(x)
     return csp
 
 if __name__ == '__main__':
+    print('Pure Backtracking: ')
     solve_semi_magic()
+    print('Min Conflict: ')
+    solve_semi_magic(algorithm=min_conflicts)
+
+    print('Minimum-remaining-values heuristic (MRV): ')
+    solve_semi_magic(select_unassigned_variable = mrv)
+    print('Least-constraining-values heuristic (LCV):')
+    solve_semi_magic(order_domain_values = lcv)
+    print('Forward Checking: ')
+    solve_semi_magic(inference = forward_checking)
+    print('Maintain Arc Consistency: ')
+    solve_semi_magic(inference = mac)
