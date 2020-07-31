@@ -3,20 +3,21 @@
 
 import matplotlib.pyplot as plt
 
-
+import torch
+import numpy as np
 
 def setbyname(model,name,value):
 
     def iteratset(obj,components,value):
-      print('components',components)
-      if not hasattr(obj,components[0]):
-        return False
-      elif len(components)==1:
-        setattr(obj,components[0],value)
-        return True
-      else:
-        nextobj=getattr(obj,components[0])
-        return iteratset(nextobj,components[1:],value)
+        print('components',components)
+        if not hasattr(obj,components[0]):
+            return False
+        elif len(components)==1:
+            setattr(obj,components[0],value)
+            return True
+        else:
+            nextobj=getattr(obj,components[0])
+            return iteratset(nextobj,components[1:],value)
 
     components=name.split('.')
     success=iteratset(model,components,value)
