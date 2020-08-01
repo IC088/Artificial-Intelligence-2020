@@ -139,11 +139,6 @@ def run():
 			pickle.dump(vgg16_bn_hooks, f)
 
 
-	
-
-
-
-
 
 if __name__ =='__main__':
 	run()
