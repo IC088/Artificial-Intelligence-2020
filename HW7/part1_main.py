@@ -8,12 +8,9 @@ import os
 import torch
 import numpy as np
 
+from hwhelpers.utils.imgnetdatastuff import *
 
-from hwhelpers.utils.dataloader import *
-
-from hwhelpers.imgnetdatastuff import *
-
-from hwhelpers.guidedbpcodehelpers import *
+from hwhelpers.utils.guidedbpcodehelpers import *
 
 from torchvision import datasets, models, transforms
 
