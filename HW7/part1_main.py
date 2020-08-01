@@ -63,9 +63,8 @@ def create_loader(im_path, labels_path, synsetfile):
 
 
 
-def get_percentile(model_path,model_name, conv0, conv1):
+def get_percentile(model_name, conv0):
 	conv0 = np.array(conv0)
-	conv1 = np.array(conv1)
 
 	percentile_list = [i for i in range(5,100,5)]
 	print(percentile_list)
@@ -74,49 +73,66 @@ def get_percentile(model_path,model_name, conv0, conv1):
 
 	for percent in percentile_list:
 
-		model_dict[model_name][percent].extend([np.percentile(conv0, percent), np.percentile(conv1, percent)])
+		model_dict[model_name][percent].extend([np.percentile(conv0, percent)])
+
 	return model_dict
 
 
-class backward_hook():
-	def __init__(self, module):
-		self.hook = module.register_backward_hook(self.hook_fn)
-	
-	def hook_fn(self, module, grad_input, grad_output):
-		self.norm = grad_output[0].norm()
-	
-	def close(self):
-		self.hook.remove()
 
-def run():
-	device = 'cuda' if torch.cuda.is_available else 'cpu'
-	im_path = os.path.join('imgnet500', 'imagespart') # folder containing thee images
-	synsetfile = os.path.join('hwhelpers', 'synset_words.txt')
-	labels_path = os.path.join('hwhelpers', 'val')
+def get_weights(vgg_model, vgg_bn_model, data_loader, criterion, device):
+	global inp
 
-	vgg_model = vgg16(pretrained = True, progress = True).to(device)
-	vgg_bn_model = vgg16_bn(pretrained = True, progress = True).to(device)
+	def hook_fn(m, i, o):
+		mod1 = m.in_channels==3 and m.out_channels==64  # conv module closest to input
+		mod2 = m.in_channels==64 and m.out_channels==64 # conv module 2nd closest to input
+		if mod1:
+			end = "_1"
+		elif mod2:
+			end = "_2"
+		if mod1 or mod2:
+			global inp
 
+			# print(inp['filename'][0].split('\\')[2][:-5])
+			filename = inp['filename'][0].split('\\')[2][:-5]
 
-	vgg16_hooks = [backward_hook(vgg_model.features[0]), backward_hook(vgg_model.features[2])]
+			if not os.path.exists('vgg16'):
+				os.makedirs('vgg16')
 
-	vgg16_bn_hooks = [backward_hook(vgg_bn_model.features[0]), backward_hook(vgg_bn_model.features[2])]
+			for grad in o:
+				try:
+					l2_norm = grad[0].norm()  # output[0]
+					torch.save(l2_norm, './vgg16/'+filename+end)
+				except AttributeError: 
+					print ("None found for Gradient")
 
-	data_loader = create_loader(im_path, labels_path, synsetfile)
+	def hook_fn_bn(m, i, o):
+		mod1 = m.in_channels==3 and m.out_channels==64  # conv module closest to input
+		mod2 = m.in_channels==64 and m.out_channels==64 # conv module 2nd closest to input
+		if mod1:
+			end = "_1"
+		elif mod2:
+			end = "_2"
+		if mod1 or mod2: 
+			global inp
 
-	results = 'part1'
-	model_vgg_name = 'vgg16'
-	model_vggbn_name = 'vgg16_bn'
-	if not os.path.exists(results):
-		os.makedirs(results)
+			filename = inp['filename'][0].split('\\')[2][:-5]
 
-	if not os.path.exists(os.path.join(results, model_vgg_name)):
-		os.makedirs(os.path.join(results, model_vgg_name))
+			if not os.path.exists('vgg16_bn'):
+				os.makedirs('vgg16_bn')
+			for grad in o:
+				try:
+					l2_norm = grad[0].norm()   # sum across all channels and dimensions
+					torch.save(l2_norm, './vgg16_bn/'+filename+end)
+					# print(l2_norm)
+				except AttributeError: 
+					print ("None found for Gradient")
+	for module in vgg_model.modules():
+		if isinstance(module,nn.Conv2d):   # only get the gradients of conv modules
+			module.register_backward_hook(hook_fn)
 
-	if not os.path.exists(os.path.join(results, model_vggbn_name)):
-		os.makedirs(os.path.join(results, model_vggbn_name))
-
-	criterion = nn.CrossEntropyLoss()
+	for module in vgg_bn_model.modules():
+		if isinstance(module,nn.Conv2d):   # only get the gradients of conv modules
+			module.register_backward_hook(hook_fn_bn)
 
 	for idx, inp in enumerate(tqdm(data_loader)):
 		img = inp['image'].to(device)
@@ -129,14 +145,56 @@ def run():
 		loss = criterion(out, label)
 		loss.backward()
 
-		with open(os.path.join( results, model_vgg_name ,filename + '.pkl') , 'wb') as f:
-			pickle.dump(vgg16_hooks, f)
-		
 		loss_bn = criterion(out_bn, label)
 		loss_bn.backward()
+	print('Finished collectimg the weights')
 
-		with open(os.path.join( results, model_vggbn_name ,filename + '.pkl') , 'wb') as f:
-			pickle.dump(vgg16_bn_hooks, f)
+def plot():
+	l2_ls = list()
+	l2_bn_ls = list()
+
+	for filename in os.listdir("vgg16"):
+		l2_ls.append(torch.load(os.path.join("vgg16",filename)).item())
+
+	for filename in os.listdir("vgg16_bn"):
+		l2_bn_ls.append(torch.load(os.path.join("vgg16_bn",filename)).item())
+
+
+	vgg_dict = get_percentile('vgg16', l2_ls)
+
+	pprint(vgg_dict)
+
+	vgg_bn_dict = get_percentile('vgg16_bn', l2_bn_ls)
+
+	pprint(vgg_bn_dict)
+
+	plt.plot(range(0,len(l2_ls)),sorted(l2_ls),label='vgg16')
+	plt.plot(range(0,len(l2_bn_ls)),sorted(l2_bn_ls),label='vgg16_bn')
+	plt.legend()
+	plt.xlabel('N Samples')
+	plt.ylabel('L2 Norm')
+	plt.show()
+
+
+def run():
+	
+	device = 'cuda' if torch.cuda.is_available else 'cpu'
+	im_path = os.path.join('imgnet500', 'imagespart') # folder containing thee images
+	synsetfile = os.path.join('hwhelpers', 'synset_words.txt')
+	labels_path = os.path.join('hwhelpers', 'val')
+
+	vgg_model = vgg16(pretrained = True, progress = True).to(device)
+	vgg_bn_model = vgg16_bn(pretrained = True, progress = True).to(device)
+
+	data_loader = create_loader(im_path, labels_path, synsetfile)
+
+	criterion = nn.CrossEntropyLoss()
+
+	get_weights(vgg_model, vgg_bn_model, data_loader, criterion, device)
+
+	plot()
+
+	
 
 
 
