@@ -29,13 +29,15 @@ import json
 from collections import defaultdict
 
 
+import torch.nn as nn
+
 from pprint import pprint
 
 from tqdm import tqdm
 
 
 
-def create_loader(im_path, synsetfile):
+def create_loader(im_path, labels_path, synsetfile):
 	'''
 	Args:
 
@@ -49,60 +51,16 @@ def create_loader(im_path, synsetfile):
 	'''
 
 	transform = transforms.Compose([transforms.Resize((224, 224)), 
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+								transforms.ToTensor(),
+								transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
+	dataset = dataset_imagenetvalpart(im_path, labels_path, synsetfile, 250 , transform=transform)
+	# dataset = ImageNetDataset(im_path, synsetfile, transform=transform)
 
-	dataset = ImageNetDataset(im_path, synsetfile, transform=transform)
-
-	data_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+	data_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1)
 
 	return data_loader
 
-
-
-
-
-class backward_hook():
-    def __init__(self, module):
-        self.hook = module.register_backward_hook(self.hook_fn)
-    
-    def hook_fn(self, module, grad_input, grad_output):
-        self.norm = grad_output[0].norm()
-    
-    def close(self):
-    	self.hook.remove()
-
-
-def get_hooks(model_path,model, data_loader, device):
-	model.eval()
-
-	
-
-	model_hooks = [backward_hook(model.features[0]), backward_hook(model.features[2])]
-
-	conv0 = []
-	conv1 = []
-
-	for idx, batch in tqdm(enumerate(data_loader)):
-
-		if idx == 249:
-			print('reached 250')
-			break
-
-		x = Variable(batch['image'], requires_grad = True).to(device)
-
-		filename = batch['filename'][0][:-5]
-		out = model(x)
-		gradients = torch.ones_like(out)
-		out.backward(gradients)
-
-		conv0.append(model_hooks[0].norm)
-		conv1.append(model_hooks[1].norm)
-
-		with open(os.path.join(model_path,filename + 'pkl'),'wb') as f:
-			pickle.dump(model_hooks, f)
-	return conv0, conv1
 
 
 def get_percentile(model_path,model_name, conv0, conv1):
@@ -120,49 +78,68 @@ def get_percentile(model_path,model_name, conv0, conv1):
 	return model_dict
 
 
-
-
-
-
-
+class backward_hook():
+	def __init__(self, module):
+		self.hook = module.register_backward_hook(self.hook_fn)
+	
+	def hook_fn(self, module, grad_input, grad_output):
+		self.norm = grad_output[0].norm()
+	
+	def close(self):
+		self.hook.remove()
 
 def run():
 	device = 'cuda' if torch.cuda.is_available else 'cpu'
 	im_path = os.path.join('imgnet500', 'imagespart') # folder containing thee images
 	synsetfile = os.path.join('hwhelpers', 'synset_words.txt')
+	labels_path = os.path.join('hwhelpers', 'val')
 
 	vgg_model = vgg16(pretrained = True, progress = True).to(device)
 	vgg_bn_model = vgg16_bn(pretrained = True, progress = True).to(device)
 
 
-	# model_dict = {'vgg16' : vgg_model}
-	model_dict = {'vgg16_bn': vgg_bn_model}
+	vgg16_hooks = [backward_hook(vgg_model.features[0]), backward_hook(vgg_model.features[2])]
 
-	data_loader = create_loader(im_path, synsetfile)
+	vgg16_bn_hooks = [backward_hook(vgg_bn_model.features[0]), backward_hook(vgg_bn_model.features[2])]
+
+	data_loader = create_loader(im_path, labels_path, synsetfile)
 
 	results = 'part1'
+	model_vgg_name = 'vgg16'
+	model_vggbn_name = 'vgg16_bn'
 	if not os.path.exists(results):
 		os.makedirs(results)
 
-	for model_name, model in model_dict.items():
+	if not os.path.exists(os.path.join(results, model_vgg_name)):
+		os.makedirs(os.path.join(results, model_vgg_name))
+
+	if not os.path.exists(os.path.join(results, model_vggbn_name)):
+		os.makedirs(os.path.join(results, model_vggbn_name))
+
+	criterion = nn.CrossEntropyLoss()
+
+	for idx, inp in enumerate(tqdm(data_loader)):
+		img = inp['image'].to(device)
+		label = inp['label'].to(device)
+		filename = inp['filename'][0].split('\\')[2][:-5]
+
+		out = vgg_model(img)
+		out_bn = vgg_bn_model(img)
+		
+		loss = criterion(out, label)
+		loss.backward()
+
+		with open(os.path.join( results, model_vgg_name ,filename + '.pkl') , 'wb') as f:
+			pickle.dump(vgg16_hooks, f)
+		
+		loss_bn = criterion(out_bn, label)
+		loss_bn.backward()
+
+		with open(os.path.join( results, model_vggbn_name ,filename + '.pkl') , 'wb') as f:
+			pickle.dump(vgg16_bn_hooks, f)
 
 
-		if not os.path.exists(os.path.join(results, model_name)):
-			os.makedirs(os.path.join(results,model_name))
-
-		model_path = os.path.join(results,model_name)
-		conv0, conv1 = get_hooks(model_path, model, data_loader, device)
-
-		#structure of the dict would be model_dict[model_name][nth percentile] -> [conv0 values, conv1 values]
-		model_dict = get_percentile(model_path, model_name, conv0, conv1)
-
-		pprint(model_dict)
-		print('Finished Part 1')
-		torch.cuda.empty_cache()
-
-
-
-
+	
 
 
 
