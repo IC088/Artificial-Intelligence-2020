@@ -61,6 +61,10 @@ def create_loader(im_path, labels_path, synsetfile):
 
 
 def get_percentile(model_name, conv0):
+	'''
+	Args:
+	- model_name : string (nmae of the model for the key )
+	'''
 	conv0 = np.array(conv0)
 
 	percentile_list = [i for i in range(5,100,5)]
